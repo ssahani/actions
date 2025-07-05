@@ -1,5 +1,13 @@
 FROM golang:1.23-alpine AS image2disk
-RUN apk add --no-cache git ca-certificates gcc linux-headers musl-dev
+RUN apk add --no-cache git ca-certificates gcc linux-headers musl-dev bash cryptsetup \
+    util-linux \
+    e2fsprogs \
+    bash \
+    ca-certificates \
+    coreutils \
+    busybox \
+    mount
+    
 WORKDIR /src/image2disk
 COPY go.mod go.sum /src/
 RUN go mod download
