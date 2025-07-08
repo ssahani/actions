@@ -95,13 +95,29 @@ func configureLogging() {
 
 // logStartupInfo records initial system and process information
 func logStartupInfo() {
+	// Get all environment variables
+	envVars := make(map[string]string)
+	for _, env := range os.Environ() {
+		if i := strings.Index(env, "="); i >= 0 {
+			key := env[:i]
+			// Mask sensitive values (case-insensitive check)
+			lowerKey := strings.ToLower(key)
+			if strings.Contains(lowerKey, "key") || strings.Contains(lowerKey, "pass") || strings.Contains(lowerKey, "secret") {
+				envVars[key] = "*****MASKED*****"
+			} else {
+				envVars[key] = env[i+1:]
+			}
+		}
+	}
+
 	log.WithFields(log.Fields{
-		"start_time": time.Now().Format(time.RFC3339Nano),
-		"pid":        os.Getpid(),
-		"ppid":       os.Getppid(),
-		"uid":        os.Getuid(),
-		"gid":        os.Getgid(),
-		"go_version": runtime.Version(),
+		"start_time":  time.Now().Format(time.RFC3339Nano),
+		"pid":         os.Getpid(),
+		"ppid":        os.Getppid(),
+		"uid":         os.Getuid(),
+		"gid":         os.Getgid(),
+		"go_version":  runtime.Version(),
+		"environment": envVars,
 	}).Info("🚀 Starting secure disk configuration")
 }
 
