@@ -14,7 +14,7 @@ This repository is a suite of reusable Tinkerbell Actions that are used to compo
 | [rootio](/rootio/)                | Manage disks (partition, format etc)
 | [slurp](/slurp/)                  | Stream a block device to a remote server |
 | [syslinux](/syslinux/)            | Install the syslinux bootloader to a block device |
-| [writefile](/writefile/)          | Write a file to a file system on a block device |
+| [writefile](/writefile/)          | This container writes a file to a mounted, LUKS-encrypted root filesystem using a keyfile stored on an unencrypted boot partition. |
 
 ## Releases
 
