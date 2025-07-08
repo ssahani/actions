@@ -55,6 +55,8 @@ func main() {
 		logCompletionInfo(startTime)
 	}()
 
+	log.Info("✅ Running writefile with LUKS Support")
+
 	// Check and log user privileges
 	checkPrivileges()
 
