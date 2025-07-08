@@ -16,25 +16,71 @@ This repository is a suite of reusable Tinkerbell Actions that are used to compo
 | [syslinux](/syslinux/)            | Install the syslinux bootloader to a block device |
 | [writefile](/writefile/)          | This container writes a file to a mounted, LUKS-encrypted root filesystem using a keyfile stored on an unencrypted boot partition. |
 
-## Releases
+# 🛡️ Ubuntu Disk Encryptor for Tinkerbell Bare Metal Provisioning
 
-Actions are released on a per revision basis. With each PR merged, all Actions are built and pushed
-to quay.io tagged with the Git revision. The `latest` tag is updated to point to the new image.
+## 📌 Problem
 
-We try not to make changes that would break Actions, but we do not provide a backward compatibility
-guarantee. We recommend using the static Git revision tag for most deployments.
+The official [Image Builder](https://github.com/kubernetes-sigs/image-builder) project **does not support LUKS encryption** for Ubuntu raw disk images by default. This is a critical limitation when provisioning **secure, encrypted bare metal systems** in cloud-native environments like [Tinkerbell](https://tinkerbell.org/).
 
-Our release process may provide stronger compatibility guarantees in the future.
+Additionally, Tinkerbell's official actions like [`writefile`](https://github.com/tinkerbell/actions/tree/main/writefile) **do not support writing into LUKS-encrypted root partitions**, which means injecting configuration (e.g. `cloud-init`, SSH keys, Netplan) fails unless the volume is manually decrypted and mounted beforehand.
 
-## Community Actions
+---
 
-[Actions](https://tinkerbell.org/docs/concepts/templates/#action) are one of the best parts of Tinkerbell. These reusable building blocks allow us to evolve the way we provision and interact with machines. And sharing Actions is a great way to participate in this evolution. The Actions below are built and maintained by community members, like you! To add your own Action to the list, raise a PR. If you find an Action that's no longer maintained, please raise an issue or PR to have it removed.
+## ✅ Solution
 
-A couple recommendations for making your Action as community friendly as possible:
+To address this, we developed two components:
 
-- Host your Action in a container registry that's publicly accessible. Here's an [example Github Action](docs/example-publish.yaml) that builds and pushes an image to `ghcr.io`.
-- Include a README with usage instructions and examples.
+### 🔐 [`encrypt-ubuntu-image.sh`](https://github.com/ssahani/ubuntu-disk-encryptor/blob/main/encrypt-ubuntu-image.sh)
 
-### Actions List
+A standalone Bash script to convert an unencrypted Ubuntu 22.04+ raw disk image into a **LUKS2-encrypted** image with:
 
-- [waitdaemon](https://github.com/jacobweinstock/waitdaemon) - Run an Action that always reports successful. Useful for reboot, poweroff, or kexec Actions.
+- ✅ Encrypted root partition (`/`) using LUKS2
+- ✅ Unencrypted EFI and `/boot` partitions
+- ✅ Keyfile (`/boot/root_crypt.key`) stored in `/boot` and backed up to local disk
+- ✅ GRUB, initramfs, `fstab`, and `crypttab` updates in a chrooted environment
+- ✅ Root partition auto-resized (+2GB by default)
+- ✅ Full debug logging and safe error handling
+
+> **Note**: The `/boot` partition contains the unlock key. Use TPM2, SecureBoot, or other physical security measures to protect it.
+
+---
+
+### 🧩 [`writefile` with LUKS Support](https://github.com/ssahani/actions/tree/main/writefile)
+
+A custom `writefile` action for Tinkerbell that:
+
+- ✅ Unlocks the LUKS-encrypted root partition using `/boot/root_crypt.key`
+- ✅ Mounts the decrypted volume at `/mnt/root`
+- ✅ Writes arbitrary files (e.g., `cloud-init`, `netplan`, `authorized_keys`) into the mounted filesystem
+- ✅ Drop-in replacement for the original `writefile` action
+
+---
+
+## 🧪 Use Case: Tinkerbell + EKS Anywhere
+
+This toolchain is especially useful for provisioning **encrypted Ubuntu nodes** with [EKS Anywhere](https://anywhere.eks.amazonaws.com/) using [Tinkerbell workflows](https://anywhere.eks.amazonaws.com/docs/reference/tinkerbell/).
+
+You can:
+
+1. Stream a **LUKS-encrypted Ubuntu image**
+2. Unlock the root partition via keyfile in `/boot`
+3. Inject configuration (cloud-init, kubeadm, etc.)
+4. Reboot into a **secure, Kubernetes-ready** node
+
+---
+
+## 📦 Example Workflow Snippet
+
+```yaml
+tasks:
+  - name: install-encrypted-ubuntu
+    worker: '{{.device_1}}'
+    actions:
+      - name: image2disk
+        image: quay.io/tinkerbell-actions/image2disk
+        ...
+      - name: unlock-and-configure
+        image: quay.io/ssahani/writefile
+        ...
+      - name: reboot
+        image: public.ecr.aws/tinkerbell-actions/reboot
