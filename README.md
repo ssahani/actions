@@ -84,3 +84,45 @@ tasks:
         ...
       - name: reboot
         image: public.ecr.aws/tinkerbell-actions/reboot
+```
+
+Here’s a concise GitHub-style README.md summary for your project:
+
+⸻
+
+
+# 🔐 chroot-luks-runner
+
+A Go-based tool to unlock a LUKS-encrypted root partition, mount boot/root filesystems, and run user-defined commands inside a chrooted Linux environment. Ideal for provisioning, recovery, or cloud-init-like workflows.
+
+## 🚀 Features
+
+- Unlocks LUKS root partition using a keyfile
+- Mounts boot and root partitions
+- Sets up a minimal chroot with `/dev`, `/proc`, `/sys`, `/dev/pts`
+- Runs commands via configurable interpreter (e.g., `/bin/sh`, `/bin/bash`)
+- Supports non-root execution using `sudo`
+- Optional DNS (`resolv.conf`) support inside chroot
+
+## 🛠️ Usage
+
+```bash
+sudo BLOCK_DEVICE=/dev/sda3 \
+     BOOT_DISK=/dev/sda2 \
+     CMD_LINE="apt-get update; apt-get install -y nginx" \
+     CHROOT=y \
+     UPDATE_RESOLV_CONF=true \
+     ./chroot-luks-runner
+
+📦 Environment Variables
+
+Variable	Description	Default
+BLOCK_DEVICE	LUKS-encrypted root device path	/dev/sda3
+BOOT_DISK	Unencrypted boot device path	/dev/sda2
+FS_TYPE	Filesystem type for root	ext4
+BOOT_FS_TYPE	Filesystem type for boot	ext4
+CMD_LINE	;-separated commands to run inside chroot	(required)
+CHROOT	Set to y to enable chroot execution	n
+DEFAULT_INTERPRETER	Shell interpreter to run commands	/bin/sh -c
+UPDATE_RESOLV_CONF	Copy DNS config to chroot	false
+DEBIAN_FRONTEND	Set Debian frontend mode	noninteractive
