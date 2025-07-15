@@ -1,70 +1,155 @@
 ```
-quay.io/tinkerbell/actions/cexec:latest
+quay.io/ssahani/cexec:latest
+```
+# LUKS Chroot Executor (quay.io/ssahani/cexec:latest)
+
+The LUKS Chroot Executor performs command execution within an encrypted LUKS filesystem environment. It handles LUKS device unlocking, mounting, and provides a secure chroot environment for command execution.
+
+## Architecture Overview
+
+```mermaid
+classDiagram
+    class MountConfig {
+        +string RootPath
+        +string BootPath
+        +string LuksName
+        +string KeyFile
+        +string MappedDevice
+    }
+
+    class DeviceConfig {
+        +string BlockDevice
+        +string BootDevice
+        +string FsType
+        +string BootFsType
+    }
+
+    class ChrootConfig {
+        +[]string Commands
+        +string Interpreter
+        +bool ChrootEnabled
+        +bool UpdateResolvConf
+        +string DebianFrontend
+    }
+
+    class Main {
+        +configureLogging()
+        +logStartupInfo()
+        +logCompletionInfo(time.Time)
+        +checkPrivileges()
+    }
+
+    class Workflow {
+        +executeWorkflow(MountConfig, DeviceConfig, ChrootConfig) error
+        +setupAndRunChroot(string, ChrootConfig) error
+    }
+
+    Main --> MountConfig
+    Main --> DeviceConfig
+    Main --> ChrootConfig
+    Main --> Workflow
+    Workflow --> MountOperations
+    Workflow --> LUKSOperations
 ```
 
-The `cexec` Action performs *execution* either within a [chroot](https://en.wikipedia.org/wiki/Chroot) environment
-or within the base filesystem. The primary use-case is being able to provision
-files/an Operating System to disk and then being able to execute something that
-perhaps resides within that filesystem.
+## Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant Main
+    participant Workflow
+    participant MountOps
+    participant LUKSOps
+    participant ChrootEnv
+    
+    Main->>Workflow: executeWorkflow()
+    Workflow->>MountOps: mountWithRetry(BOOT_DEVICE)
+    Workflow->>LUKSOps: verifyKeyfile()
+    Workflow->>LUKSOps: handleLUKSOperations()
+    Workflow->>MountOps: mountWithRetry(ROOT_DEVICE)
+    Workflow->>ChrootEnv: setupAndRunChroot()
+    ChrootEnv->>ChrootEnv: execute commands
+    ChrootEnv-->>Workflow: return result
+    Workflow-->>Main: return result
+```
 
 ## Examples
 
+### Basic LUKS chroot execution
 ```yaml
 actions:
-- name: "Install Grub"
-  image: quay.io/tinkerbell/actions/cexec:latest
-  timeout: 90
+- name: "Execute in LUKS environment"
+  image: quay.io/ssahani/cexec:latest
+  timeout: 120
   environment:
-      BLOCK_DEVICE: /dev/sda3
-      FS_TYPE: ext4
-      CHROOT: y
-      CMD_LINE: "grub-install --root-directory=/boot /dev/sda"
+    BLOCK_DEVICE: /dev/nvme0n1p3
+    BOOT_DISK: /dev/nvme0n1p1
+    FS_TYPE: ext4
+    BOOT_FS_TYPE: vfat
+    CHROOT: y
+    CMD_LINE: "apt-get update"
 ```
 
-In order to execute multiple commands (separated by a semi-colon) we will
-need to leverage a shell. We do this by passing `sh -c` as a `DEFAULT_INTERPRETER`.
-This interpreter will then parse your commands.
-
+### Multiple commands with custom interpreter
 ```yaml
 actions:
-- name: "Update packages"
-  image: quay.io/tinkerbell/actions/cexec:latest
-  timeout: 90
+- name: "System configuration"
+  image: quay.io/ssahani/cexec:latest
+  timeout: 300
   environment:
-      BLOCK_DEVICE: /dev/sda3
-      FS_TYPE: ext4
-      CHROOT: y
-      DEFAULT_INTERPRETER: "/bin/sh -c"
-      CMD_LINE: "apt-get -y update; apt-get -y upgrade"
-      UPDATE_RESOLV_CONF: true
-      DEBIAN_FRONTEND: noninteractive
+    BLOCK_DEVICE: /dev/sda3
+    BOOT_DISK: /dev/sda1
+    FS_TYPE: ext4
+    DEFAULT_INTERPRETER: "/bin/bash -c"
+    CMD_LINE: "apt-get update; apt-get upgrade -y"
+    UPDATE_RESOLV_CONF: true
+    DEBIAN_FRONTEND: noninteractive
 ```
 
-### Environment variables and CLI flags
+## Environment Variables
 
-All options can be set either via environment variables or CLI flags.
-CLI flags take precedence over environment variables, which take precedence over default values.
+| Env Variable           | Type    | Default   | Required | Description |
+|------------------------|---------|-----------|----------|-------------|
+| `BLOCK_DEVICE`         | string  | /dev/sda3 | No*      | Encrypted block device |
+| `BOOT_DISK`            | string  | /dev/sda2 | No*      | Boot partition |
+| `FS_TYPE`             | string  | ext4      | No       | Root filesystem type |
+| `BOOT_FS_TYPE`        | string  | ext4      | No       | Boot filesystem type |
+| `CHROOT`              | string  | n         | No       | Set to "y" for chroot |
+| `CMD_LINE`            | string  |           | Yes      | Command(s) to execute |
 
-| Env variable | Flag | Type | Default Value | Required | Description |
-|--------------|------|------|---------------|----------|-------------|
-| `BLOCK_DEVICE` | `--block-device` | string | "" | yes | The block device to mount. |
-| `FS_TYPE` | `--fs-type` | string | "" | yes | The filesystem type of the block device. |
-| `CHROOT` | `--chroot` | string | "" | no | If set to `y` (or a non empty string), the Action will execute the given command within a chroot environment. This option is DEPRECATED. Future versions will always chroot. |
-| `CMD_LINE` | `--cmd-line` | string | "" | yes | The command to execute. |
-| `DEFAULT_INTERPRETER` | `--default-interpreter` | string | "" | no | The default interpreter to use when executing commands. This is useful when you need to execute multiple commands. |
-| `UPDATE_RESOLV_CONF` | `--update-resolv-conf` | boolean | false | no | If set to `true`, the cexec Action will update the `/etc/resolv.conf` file within the chroot environment with the `/etc/resolv.conf` from the host. |
-| `JSON_OUTPUT` | `--json-output` | boolean | true | no | If set to `true`, the cexec Action will log output in JSON format. The defaults to `true`. If set to `false`, the cexec Action will log output in plain text format. |
+## Key Features
 
-Any environment variables you set on the Action will be available to the command you execute.
-For example, if you set `DEBIAN_FRONTEND: noninteractive` as an environment variable, it will be available to the command you execute.
+1. **LUKS Encryption Support**:
+   - Automatic device unlocking with keyfile
+   - Keyfile verification (permissions, content)
+   - Clean device closure after execution
 
-### Exit codes
+2. **Robust Mount Management**:
+   - Automatic mount point selection
+   - Retry logic for mount operations
+   - Comprehensive cleanup
 
-The following exit codes or statuses are returned by the `cexec` Action:
+3. **Secure Chroot Environment**:
+   - Essential filesystems mounted (dev, proc, sys)
+   - Optional network configuration
+   - Privilege escalation handling
+
+## Exit Codes
 
 | Code | Description |
 |------|-------------|
-| 0 | The cexec Action was executed successfully. |
-| 10 | The was a failure parsing cli flags and/or env variables. |
-| 20 | Required cli flags and/or env variables were not specified. |
-| 30 | The cexec Action failed to execute successfully. |
+| 0    | Success |
+| 1-9  | Configuration errors |
+| 10-19| Mount operations failures |
+| 20-29| LUKS operations failures |
+| 30-39| Chroot execution failures |
+
+## Best Practices
+
+1. Store LUKS keyfile in secure boot partition
+2. Set appropriate timeout for chroot operations
+3. Review logs for permission warnings
+4. Use `DEBIAN_FRONTEND=noninteractive` for package operations
+5. Verify device paths before execution
+
+The `quay.io/ssahani/cexec:latest` image provides this enhanced LUKS-capable chroot execution environment while maintaining compatibility with standard cexec workflows.
